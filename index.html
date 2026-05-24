@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نظام الرصد الملاحي المدمج</title>
+<style>
+body,html{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#0c1015;font-family:sans-serif;}
+#map-canvas{width:100%;height:100%;position:absolute;top:0;left:0;background:#070a0e;}
+.control-panel{position:absolute;top:20px;right:20px;color:#fff;z-index:1000;background:rgba(15,23,42,0.95);padding:22px;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,0.7);width:310px;box-sizing:border-box;border:1px solid #1e293b;backdrop-filter:blur(8px);}
+.control-panel h2{margin:0 0 5px 0;font-size:16px;color:#38bdf8;text-align:center;}
+.control-panel p{margin:0 0 15px 0;font-size:11px;color:#94a3b8;text-align:center;}
+.section-title{font-size:12px;color:#38bdf8;font-weight:bold;margin:12px 0 8px 0;}
+.layer-item{display:flex;align-items:center;margin-bottom:12px;cursor:pointer;user-select:none;padding:4px;border-radius:6px;transition:background 0.2s;}
+.layer-item:hover {background:rgba(255,255,255,0.05);}
+.layer-item input{margin-left:12px;transform:scale(1.3);cursor:pointer;}
+.layer-name{font-size:14px;font-weight:500;}
+</style>
+</head>
+<body>
+<canvas id="map-canvas"></canvas>
+<div class="control-panel">
+<h2>📊 لوحة التحكم بالمؤشرات حية</h2>
+<p>"حولنا البكاء إلى ذكاء"</p>
+<hr style="border-color:#334155;">
+<div class="section-title">💨 فلاتر الهواء (Air):</div>
+<label class="layer-item"><input type="checkbox" checked id="wind-chk"><span class="layer-name">🌬️ حركة الرياح والدوامات (أبيض)</span></label>
+<hr style="border-color:#334155;">
+<div class="section-title">🌊 فلاتر البحر (Ocean):</div>
+<label class="layer-item"><input type="checkbox" checked id="currents-chk"><span class="layer-name">🚢 تيارات المحيط الدائرية (أزرق)</span></label>
+<label class="layer-item"><input type="checkbox" checked id="waves-chk"><span class="layer-name">🏄‍♂️ حركة الأمواج المتلاطمة (بنفسجي)</span></label>
+</div>
+<script>
+window.onload=function(){
+var cvs=document.getElementById("map-canvas");var ctx=cvs.getContext("2d");
+var zoom=1.8,offsetX=0,offsetY=0,isDragging=false,startX,startY,liveGrid=[];
+function resize(){cvs.width=window.innerWidth;cvs.height=window.innerHeight;}
+window.addEventListener('resize',resize);resize();
+fetch('/api/live-weather').then(res=>res.json()).then(data=>{liveGrid=data;});
+var pWind=[],pCurrents=[],pWaves=[],count=350;
+for(var i=0;i<count;i++){
+pWind.push({x:Math.random()*4000-2000,y:Math.random()*2000-1000,age:Math.random()*120,s:0.8+Math.random()*1.2});
+pCurrents.push({x:Math.random()*4000-2000,y:Math.random()*2000-1000,age:Math.random()*150,s:0.4+Math.random()*0.8});
+pWaves.push({x:Math.random()*4000-2000,y:Math.random()*2000-1000,age:Math.random()*100,s:0.6+Math.random()*1.0});
+}
+var vortices=[{x:150,y:-20,force:1.8,type:'cyclone'},{x:-80,y:-40,force:1.5,type:'anti'},{x:-50,y:120,force:2.0,type:'cyclone'},{x:500,y:-150,force:1.6,type:'cyclone'}];
+function drawDetailedWorldMap(ctx){
+ctx.lineWidth=1.5/zoom;ctx.strokeStyle="#2563eb";ctx.fillStyle="#0f172a";
+var world=[
+[{x:40,y:40},{x:35,y:42},{x:33,y:50},{x:34,y:58},{x:35,y:72},{x:37,y:90},{x:42,y:112},{x:54,y:122},{x:59,y:115},{x:57,y:95},{x:48,y:85},{x:51,y:60},{x:47,y:48}],
+[{x:32,y:38},{x:10,y:35},{x:-5,y:37},{x:-16,y:32},{x:-17,y:15},{x:-12,y:5},{x:14,y:-12},{x:12,y:-34},{x:20,y:-35},{x:34,y:-18},{x:40,y:-5},{x:51,y:11},{x:46,y:12},{x:43,y:25},{x:39,y:27}],
+[{x:34,y:42},{x:27,y:45},{x:10,y:43},{x:-10,y:44},{x:-10,y:60},{x:5,y:65},{x:10,y:72},{x:30,y:75},{x:60,y:78},{x:110,y:77},{x:150,y:75},{x:170,y:72},{x:180,y:55},{x:140,y:40},{x:120,y:15},{x:105,y:5},{x:75,y:12},{x:72,y:24},{x:52,y:26},{x:45,y:35}],
+[{x:72,y:24},{x:79,y:8},{x:86,y:22},{x:98,y:16},{x:105,y:2},{x:102,y:-6},{x:96,y:12}],
+[{x:-100,y:35},{x:-125,y:55},{x:-165,y:75},{x:-170,y:60},{x:-125,y:28},{x:-105,y:18}],[{x:-82,y:12},{x:-42,y:-8},{x:-47,y:-32},{x:-72,y:-56},{x:-77,y:-36},{x:-82,y:-16}],[{x:116,y:-18},{x:142,y:-13},{x:152,y:-28},{x:142,y:-38},{x:116,y:-33}]
+];
+world.forEach(function(poly){
+ctx.beginPath();poly.forEach(function(pt,idx){
+var cx=pt.x*6.5;var cy=-pt.y*5.0+160;
+if(idx===0)ctx.moveTo(cx,cy);else ctx.lineTo(cx,cy);
+});
+ctx.closePath();ctx.fill();ctx.stroke();
+});
+}
+function getVectorForce(x,y){
+var dx=1.0,dy=0.0;
+vortices.forEach(function(v){
+var diffX=v.x-x,diffY=v.y-y,dist=Math.sqrt(diffX*diffX+diffY*diffY);
+if(dist<400){
+var str=(1-(dist/400))*v.force;
+if(v.type==='cyclone'){
+dx+=(-diffY/dist)*str*2.2+(diffX/dist)*str*0.3;
+dy+=(diffX/dist)*str*2.2+(diffY/dist)*str*0.3;
+}else{dx+=(diffY/dist)*str*1.8;dy+=(-diffX/dist)*str*1.8;}
+}
+});
+if(liveGrid.length>0){
+let idx=Math.abs(Math.floor(x+y))%liveGrid.length;
+dx+=liveGrid[idx].u*0.05;dy+=liveGrid[idx].v*0.05;
+}
+return{x:dx,y:dy};
+}
+function render(){
+ctx.fillStyle="rgba(7,10,14,0.14)";ctx.fillRect(0,0,cvs.width,cvs.height);
+ctx.save();ctx.translate(cvs.width/2+offsetX,cvs.height/2+offsetY);ctx.scale(zoom,zoom);
+drawDetailedWorldMap(ctx);
+if(document.getElementById("wind-chk").checked){
+ctx.fillStyle="rgba(255,255,255,0.85)";
+pWind.forEach(function(p){
+ctx.fillRect(p.x,p.y,2/zoom,2/zoom);var f=getVectorForce(p.x,p.y);
+p.x+=f.x*p.s;p.y+=f.y*p.s;p.age++;
+if(p.x>2000||p.x<-2000||p.y>1000||p.y<-1000||p.age>120){p.x=Math.random()*4000-2000;p.y=Math.random()*2000-1000;p.age=0;}
+});
+}
+if(document.getElementById("currents-chk").checked){
+ctx.fillStyle="rgba(0,191,255,0.85)";
+pCurrents.forEach(function(p){
+ctx.fillRect(p.x,p.y,2.5/zoom,2.5/zoom);var f=getVectorForce(p.x,p.y);
+p.x+=f.x*p.s*0.7;p.y+=f.y*p.s*0.7;p.age++;
+if(p.x>2000||p.x<-2000||p.y>1000||p.y<-1000||p.age>150){p.x=Math.random()*4000-2000;p.y=Math.random()*2000-1000;p.age=0;}
+});
+}
+if(document.getElementById("waves-chk").checked){
+ctx.fillStyle="rgba(217,70,239,0.85)";
+pWaves.forEach(function(p){
+ctx.fillRect(p.x,p.y,2/zoom,2/zoom);var f=getVectorForce(p.x,p.y);
+p.x+=(f.x+0.5)*p.s*0.9;p.y+=(f.y+0.5)*p.s*0.9;p.age++;
+if(p.x>2000||p.x<-2000||p.y>1000||p.y<-1000||p.age>100){p.x=Math.random()*4000-2000;p.y=Math.random()*2000-1000;p.age=0;}
+});
+}
+ctx.restore();requestAnimationFrame(render);
+}
+cvs.addEventListener('mousedown',function(e){if(e.target.tagName==="INPUT"||e.target.closest('.control-panel'))return;isDragging=true;startX=e.clientX-offsetX;startY=e.clientY-offsetY;cvs.style.cursor="grabbing";});
+window.addEventListener('mousemove',function(e){if(isDragging){offsetX=e.clientX-startX;offsetY=e.clientY-startY;}});
+window.addEventListener('mouseup',function(){isDragging=false;cvs.style.cursor="default";});
+cvs.addEventListener('wheel',function(e){e.preventDefault();var factor=e.deltaY<0?1.1:0.9;var newZoom=zoom*factor;if(newZoom>0.4&&newZoom<6)zoom=newZoom;});
+render();
+};
+</script>
+</body>
+</html>
